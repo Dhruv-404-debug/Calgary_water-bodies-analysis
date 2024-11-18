@@ -1,0 +1,552 @@
+---
+title: "An Investigation into the Quality of Water Bodies of Calgary through the Analysis of pH Patterns"
+author: "Dhruv"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+
+# The motivation
+
+Calgary’s water supply is not only vital to potable water but also used to support essential recreational use from the Bow and Elbow Rivers (The City of Calgary, 2024a). Looking through pH patterns can provide us some valuable information to gain on how the overall health and stability are in these water bodies that surround Calgary area. The pH is a critical indicator water quality, immediately affecting aquatic ecosystems and human use.
+
+The population includes the water bodies around the Calgary area, including rivers, lakes, and streams. This dataset about water quality monitoring sonde is a sample of this population since readings were done every 15 minutes, and at different sample sites. Focusing observed the data during the period between Jan. 01 and Jun.30, 2024, to estimate the current pH pattern of water bodies around Calgary.
+
+The variables of interest in this project include the pH levels and water temperature, and the parameters would implement in this study including:
+
+**- Parameter 1:** Calculate the average pH of bodies of water in Calgary. Find out the range of true mean pH level by using confidence interval estimation.
+
+**- Parameter 2:** Calculate the relationship between water temperature and pH levels. For determining the relationship between changes in temperature to pH levels use simple linear regression.
+
+These analyses will contribute to the state of current pH level in the water bodies of Calgary and aid the water management and conservation efforts by providing useful information about the current status.
+
+
+
+# Data collection
+
+The dataset used for this project is compiled from The City of Calgary’s in situ water quality monitoring program . We accessed the data, which is collected using multi-parameter sondes deployed in surface waters from the Open Calgary Data site (The City of Calgary, 2023). The measurements are taken continuously at regular intervals (e.g., every 15 minutes) and through discrete sampling methods conducted by field technicians.
+
+Given the extensive dataset, we utilized the filtering options to focus specifically on records from January 2024 to June 2024 and to select continuous measurement values to suit the scope of our project.
+After filtering, we found the need to restructure the data for our exploratory data analysis (EDA). Although the dataset had undergone initial cleaning, we needed to address remaining missing or invalid values. We systematically checked for these issue and removed them.
+
+As part of our compliance with the Open Government Licence – City of Calgary, we acknowledge the source of this information and ensure proper attribution in my project, as stipulated in the license terms (The City of Calgary, 2024b).
+
+# Statistical analysis
+
+Using your chosen procedures of statistical inference, and your statistical conclusions.
+
+```{r load-libraries, warning=FALSE, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(boot)
+```
+
+Reading the data, filtering it down to the relevant columns and parameters required. For the purpose of the project we require only two parameters; Water Temperature and pH.
+
+```{r Import dataset}
+data <- read.csv("water_monitoring_data.csv", header = TRUE, stringsAsFactors = FALSE)
+str(data)
+data <- subset(data, Parameter %in% c("Water Temperature", "pH"))
+data <- data[, c("ID", "Sample.Site", "Sample.Date", "Parameter", "Numeric.Result")]
+head(data)
+```
+
+We transform the original data set, which is in a long format with repeated measurements for different parameters on the same date, into a wide format. We organize the data such that each unique date appears only once, with separate columns for each parameter: Water Temperature (°C) and pH (pH units).
+
+```{r Create a pivot table}
+formatted_data <- data %>%
+  pivot_wider(
+    names_from = Parameter, 
+    values_from = Numeric.Result
+  ) %>%
+  rename(
+    `WaterTemperature (°C)` = `Water Temperature`, 
+    `pH (pH units)` = `pH`
+  )
+head(formatted_data)
+```
+
+```{r Grouping data}
+finalized_data <- formatted_data %>%
+  group_by(`Sample.Site`, `Sample.Date`) %>%
+  summarise(
+    water_temp = `WaterTemperature (°C)`[!is.na(`WaterTemperature (°C)`)][1],
+    ph = `pH (pH units)`[!is.na(`pH (pH units)`)][1],
+    .groups = 'drop'
+  )
+head(finalized_data)
+```
+
+The data, originally in a Data Frame format, was changed to tibble format due to the use of the pivot_wider() function. We then converted it back to a Data Frame format to facilitate easier analysis. This conversion helps in identifying missing values and simplifies data manipulation.
+
+```{r Convert to a dataframe}
+df_data_frame <- as.data.frame(finalized_data)
+head(df_data_frame)
+```
+
+Identifying and dropping missing values
+
+```{r Handle mising values}
+missing_values <- colSums(is.na(df_data_frame))
+print(missing_values)
+dim(df_data_frame)
+df_clean <- na.omit(df_data_frame)
+dim(df_clean)
+str(df_clean)
+```
+
+## EDA
+
+### 1. Measures of Center (location)
+
+***For Water Temperature***
+
+```{r Measures of Center (location) for Water Temperature}
+#function definition to calculate mode
+calculate_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+#calculating mean, median, and mode for water temperature readings
+mean_water_temperature <- mean(df_clean$water_temp, na.rm = TRUE)
+median_water_temperature <- median(df_clean$water_temp, na.rm = TRUE)
+mode_water_temperature <- calculate_mode(df_clean$water_temp)
+
+#displaying the mean, median and mode for water temperature readings
+cat("For water temperature readings:\n")
+cat("Mean Water Temperature:", mean_water_temperature, "\n")
+cat("Median Water Temperature:", median_water_temperature, "\n")
+cat("Mode Water Temperature:", mode_water_temperature, "\n")
+```
+
+The average temperature of 8.67°C suggests that most water bodies monitored had relatively mild temperatures during this period. However, this value likely reflects both colder winter readings and the gradual warming as spring progresses.
+
+The median is close to the mean, indicating that the majority of the temperatures are centered around this value, likely from the warmer months (April to June). The cold winter months might have contributed lower outlier readings, but the majority of temperatures are around 9°C.
+
+The mode being slightly below freezing suggests that many measurements during the colder months (January through March) were taken when the water was near or below freezing. This is very common since Calgary experiences significant drops in temperatures.
+
+***For pH level***
+
+```{r Measures of Center (location) for pH level}
+# Calculate mean, median, and mode for pH readings
+mean_ph_reading <- mean(df_clean$ph, na.rm = TRUE)
+median_ph_reading <- median(df_clean$ph, na.rm = TRUE)
+mode_ph_reading <- calculate_mode(df_clean$ph)
+
+# Display the results
+cat("For pH readings:\n")
+cat("Mean pH Reading:", mean_ph_reading, "\n")
+cat("Median pH Reading:", median_ph_reading, "\n")
+cat("Mode pH Reading:", mode_ph_reading, "\n")
+```
+
+The average pH reading of 8.29 indicates that the water bodies monitored are generally alkaline, which is consistent with many freshwater environments.
+
+The median pH value, being slightly lower than the mean, suggests that while most readings are centered around this value, there may be some higher pH outliers that influenced the mean upward. This can often occur in areas with runoff from agricultural land or industrial activities, leading to elevated pH levels.
+
+The mode of 8.23 reflects the most frequently recorded pH measurement, suggesting that many observations cluster around this alkaline level. This consistency could indicate stable water chemistry, typical for the monitored locations during the sampling period.
+
+### 2. Measures of Spread
+
+***For Water Temperature***
+
+```{r Measures of Spread for Water Temperature}
+#range
+range_water_temperature <- range(df_clean$water_temp, na.rm = TRUE)
+
+#mean absolute deviation
+mad_water_temperature <- mean(abs(df_clean$water_temp - mean(df_clean$water_temp, na.rm = TRUE)), na.rm = TRUE)
+
+#variance
+var_water_temperature <- var(df_clean$water_temp, na.rm = TRUE)
+
+#standard deviation
+sd_water_temperature <- sd(df_clean$water_temp, na.rm = TRUE)
+
+#displaying the results
+cat("For water temperature readings:\n")
+cat("Range:", range_water_temperature[1], "to", range_water_temperature[2], "\n")
+cat("Mean Absolute Deviation:", mad_water_temperature, "\n")
+cat("Variance:", var_water_temperature, "\n")
+cat("Standard Deviation:", sd_water_temperature, "\n")
+```
+
+The water temperature varies significantly, from slightly below freezing (-0.207°C) to a high of 26.098°C. This large range reflects the dataset’s span from Calgary’s cold winter months to warmer temperatures approaching summer. The extreme low suggests that some bodies of water were near or just below freezing during the colder months, while the high values likely occurred during late spring or early summer.
+
+A mean absolute deviation of 4.6°C suggests that most water temperature readings fluctuate moderately around the mean, reflecting the varying conditions as the seasons change.
+
+A variance of 29.63 indicates significant variability in the water temperatures, which is expected given the wide seasonal range in Calgary from winter to summer.
+
+The standard deviation indicates that on average, water temperature readings deviate by about 5.44°C from the mean emphasizes the variability in water temperatures, likely driven by the transition from winter’s cold to spring’s warmth.
+
+***For pH Level***
+
+```{r Measures of Spread for pH Level}
+#range
+range_ph_reading <- range(df_clean$ph, na.rm = TRUE)
+
+#mean absolute deviation
+mad_ph_reading <- mean(abs(df_clean$ph - mean(df_clean$ph, na.rm = TRUE)), na.rm = TRUE)
+
+#variance
+var_ph_reading <- var(df_clean$ph, na.rm = TRUE)
+
+#standard deviation
+sd_ph_reading <- sd(df_clean$ph, na.rm = TRUE)
+
+#displaying the results
+cat("For pH readings:\n")
+cat("Range:", range_ph_reading[1], "to", range_ph_reading[2], "\n")
+cat("Mean Absolute Deviation:", mad_ph_reading, "\n")
+cat("Variance:", var_ph_reading, "\n")
+cat("Standard Deviation:", sd_ph_reading, "\n")
+
+```
+
+The pH values range from 7.12 pH units (almost neutral) to 10.47 pH units (moderately alkaline). Most values remain within the typical pH range for natural waters (6.5 pH units – 9 pH units).
+
+Mean absolute deviation has a small 0.1812199 value suggesting that most pH readings are very close to the mean pH (8.29). The data shows relatively little deviation from the average, indicating stable water quality.
+
+The low variance of 0.06877045 indicates minimal spread in the pH readings, meaning that most pH values are closely concentrated around the mean. The water quality remains relatively constant across the monitored period.
+
+A standard deviation of 0.26 reinforces the low variability in pH values. On average, the pH values deviate very little from the mean, suggesting stable water conditions with minimal fluctuations in alkalinity.
+
+### 3. Quartiles and Interquartile Range
+
+***For Water Temperature***
+
+```{r Quartiles and Interquartile Range for Water Temperature}
+#quartiles
+q1_water_temperature <- quantile(df_clean$water_temp, 0.25, na.rm = TRUE)
+q2_water_temperature <- quantile(df_clean$water_temp, 0.5, na.rm = TRUE)
+q3_water_temperature <- quantile(df_clean$water_temp, 0.75, na.rm = TRUE)
+
+#interquartile range (IQR)
+iqr_water_temperature <- IQR(df_clean$water_temp, na.rm = TRUE)
+
+#displaying the results
+cat("For water temperature readings:\n")
+cat("1st Quartile (Q1):", q1_water_temperature, "\n")
+cat("2nd Quartile (Q2 / Median):", q2_water_temperature, "\n")
+cat("3rd Quartile (Q3):", q3_water_temperature, "\n")
+cat("Interquartile Range (IQR):", iqr_water_temperature, "\n")
+```
+
+25% of the recorded water temperatures are below 4.348°C. Since the data spans from January to June, this value is likely influenced by the colder winter months.
+
+Half of the data points are below 8.9945°C and half are above. This aligns well with the average temperatures during the transition from late winter to early summer in Calgary.
+
+75% of the recorded water temperatures are below 12.834°C. This value likely reflects the warmer months (April to June) as the temperatures rise.
+
+Temperature readings have an IQR of 8.486°C indicating a relatively large spread in water temperature values, which is expected due to seasonal changes. It suggests significant variability as the temperature transitions from winter to spring.
+
+***For pH Level***
+
+```{r Quartiles and Interquartile Range for pH Level}
+#quartiles
+q1_ph_reading <- quantile(df_clean$ph, 0.25, na.rm = TRUE)
+q2_ph_reading <- quantile(df_clean$ph, 0.5, na.rm = TRUE)
+q3_ph_reading <- quantile(df_clean$ph, 0.75, na.rm = TRUE)
+
+#interquartile range (IQR)
+iqr_ph_reading <- IQR(df_clean$ph, na.rm = TRUE)
+
+#displaying the results
+cat("For pH readings:\n")
+cat("1st Quartile (Q1):", q1_ph_reading, "\n")
+cat("2nd Quartile (Q2 / Median):", q2_ph_reading, "\n")
+cat("3rd Quartile (Q3):", q3_ph_reading, "\n")
+cat("Interquartile Range (IQR):", iqr_ph_reading, "\n")
+```
+
+25% of the readings are below 8.16 pH units. This value reflects slightly alkaline conditions.
+
+Half of the readings are below 8.27 pH units and half are above. The median is close to the mean (8.29 pH units), indicating consistent and stable pH levels with minimal extreme values.
+
+75% of the pH readings are below 8.4 pH units. This suggests that most of the water bodies being monitored have pH levels that are slightly alkaline but remain well within a stable range.
+
+pH readings have a small IQR of 0.24 which means that the middle 50% of the pH readings are very closely clustered around the median reflecting a stable water chemistry, with very little fluctuation in pH values.
+
+### 4. Histograms
+
+***For Water Temperature***
+
+```{r Histograms for Water Temperature}
+library(ggplot2)
+#Histogram for water temperature readings
+p1_water_temp <- ggplot(df_clean, aes(x = water_temp)) +
+  geom_histogram(binwidth = 1, color = "#F4A582", fill = "#FDDBC7") +
+  labs(title = "Histogram of Water Temperature Readings")
+
+print(p1_water_temp)
+```
+
+The histogram of water temperature readings reveals a right-skewed distribution with a high concentration of values around 0°C, indicating that many measurements are near freezing. There is a long tail extending towards higher temperatures (up to 26°C), suggesting the less frequent occurrence of warmer readings. The primary mode is at 0°C, with a secondary peak between 5-15°C. This shows that there are distinct groups in the data, reflecting the seasonal changes in water temperatures.
+
+***For pH Level***
+
+```{r Histograms for pH Level}
+#Histogram for pH readings
+p1_ph <- ggplot(df_clean, aes(x = ph)) +
+  geom_histogram(binwidth = 0.25, color = "#F4A582", fill = "#FDDBC7") +
+  labs(title = "Histogram of pH Readings")
+
+print(p1_ph)
+```
+
+The histogram of pH readings exhibits an asymmetrical distribution, with a high concentration of values primarily between 8 and 9, indicating that most measurements fall within a slightly alkaline range. There is a minor tail on both ends, suggesting that extreme pH values below 7 or above 10 are rare. The primary mode lies between 8 and 8.5, with a secondary peak around 8.5 to 9, highlighting that the water quality is generally stable and consistently maintains a slightly alkaline condition.
+
+### 5. Boxplots 
+
+***For Water Temperature***
+
+```{r Boxplots for Water Temperature}
+#Boxplot for water temperature readings
+p2_water_temp <- ggplot(df_clean, aes(x = "", y = water_temp)) +
+  geom_boxplot(fill = "#F4A582") +
+  labs(title = "Boxplot of Water Temperature Readings")
+
+print(p2_water_temp)
+```
+
+The boxplot of water temperature readings indicates a median temperature around almost 10°C. The interquartile range (IQR) spans from approximately 4.35°C to 12.83°C, reflecting a moderate spread in the middle 50% of the data. The whiskers extend to the minimum and maximum values, highlighting a wide range of temperatures, from just below 0°C to around 26°C. While the plot does not indicate specific outliers, any points outside the whiskers would typically represent extreme values. Overall, there is a considerable variability in water temperatures.
+
+***For pH level***
+
+```{r Boxplots for pH level}
+#Boxplot for pH readings
+p2_ph <- ggplot(df_clean, aes(x = "", y = ph)) +
+  geom_boxplot(fill = "#F4A582") +
+  labs(title = "Boxplot of pH Readings")
+
+print(p2_ph)
+```
+
+The boxplot of pH readings shows a median pH of approximately 8.2. The interquartile range (IQR) spans from roughly 7.5 to 8.5, indicating a relatively narrow range of pH values in the middle 50% of the data. The whiskers extend to the minimum and maximum values, which appear to be around 7 and 10, respectively. There is one outlier visible at a pH of around 11. Overall, the pH readings exhibit a moderate degree of variability with a clear median value and a compact distribution of values within the IQR.
+
+## Estimate the mean pH level of water bodies in Calgary
+
+There is severe skewness in pH parameter, meaning it is not following the normal distribution.In order to tackle that, we are going to use the bootstrap approach - a non-parametric approach.
+
+```{r Bootstap CI Estimation}
+# Function to calculate the mean of resampled pH values
+mean_ph_function <- function(data, indices) {
+  # Resample the data based on the indices
+  resampled_data <- data[indices]
+  # Return the mean of the resampled pH values
+  return(mean(resampled_data, na.rm = TRUE))
+}
+
+# Number of bootstrap replications
+n_boot <- 1000
+
+# Perform bootstrap
+bootstrap_results <- boot(data = df_clean$ph, statistic = mean_ph_function, R = n_boot)
+
+# Calculate the 95% bootstrap percentile confidence interval
+bootstrap_conf_interval <- boot.ci(bootstrap_results, type = "perc")
+
+# Print the bootstrap results
+cat("Mean pH Level (Bootstrap Estimate):", mean(bootstrap_results$t), "\n")
+cat("95% Bootstrap Percentile Confidence Interval for Mean pH Level:", 
+    bootstrap_conf_interval$percent[4], "-", bootstrap_conf_interval$percent[5], "\n")
+
+```
+
+```{r Bootstrap CI Histogram}
+par(mfrow=c(1,2))
+# Plot histogram of the bootstrapped sample means
+boot_means <- bootstrap_results$t
+# Plot histogram of the bootstrapped sample means
+hist(boot_means, main = "Bootstrap Distribution of pH Means", 
+     xlab = "Mean pH", col="#F4A582", border = "black")
+
+# Create a Q-Q plot to check for normality of the bootstrapped means
+qqnorm(boot_means, main = "Q-Q Plot of Bootstrapped Means")
+qqline(boot_means, col = "red")
+```
+
+The population mean pH level of the water bodies in Calgary, estimated through the bootstrap procedure, is approximately 8.2857. This provides an estimate of the average pH level based on the sample data you collected.
+
+<div align="center"> $$8.2843 \le \mu_{pH} \le 8.2871$$ </div>
+
+The 95% bootstrap interval for the $\mu$, the population mean pH level of water bodies around Calgary is somewhere between 8.2843 and 8.2871.
+
+Because the interval is quite narrow between 8.2843 and 8.2871, we can be fairly confident in this estimate, and the results suggest that the mean pH level is around 8.2857 with little variation.
+
+## Model the relationship between water temperature and pH levels
+
+### Create a scatter plot of y and x
+
+Examine the relationship displayed between y and x.
+
+```{r Scatter Plot to examine the relationship between ph and water_temp}
+ggplot(df_clean, aes(x=water_temp, y=ph)) + 
+    geom_point(col="#F4A582", stroke=1, fill="#FDDBC7", alpha=.5, size=1)
+```
+
+We can see that as the water temperature increases, the pH level slightly increases in a linear fashion, so we can consider fitting a simple linear regression model to the data.
+
+```{r Simple Linear Regression}
+model <- lm(ph ~ water_temp, df_clean)
+summary(model)
+```
+
+Add regression line to the scatter plot
+
+```{r Adding regression line to the scatter plot}
+ggplot(df_clean, aes(x=water_temp, y=ph)) + 
+    geom_point(col="#F4A582", stroke=1, fill="#FDDBC7", alpha=.5, size=1)+
+  geom_smooth(method=lm , color="#B2182B", se=FALSE) 
+```
+
+The overall F test (F=4273 on 1 and 144704 DF, p-value=2.2e-16) and the individual t tests (P-value for intercept is 2e-16, P-value for slope is 2e-16) all suggest that the fitted model is highly statistically significant. However, the coefficient of determination is only $R^2=0.02868$. The low R-squared value indicates that water temperature explains a very small portion of the variation in pH levels. There may be other important factors influencing pH that are not included in this model.
+
+We run some model diagnostics to check the simple linear regression assumptions.
+
+```{r Model Diagnostics}
+par(mfrow=c(2,2))
+plot(model, col="#F4A582")
+```
+{r,echo=FALSE,fig.cap="Model Dianostic Plots",out.width='60%'}
+knitr::include_graphics("myplot.png")
+```{r Model Diagnostics without the Influential Points}
+model2 = lm(ph ~ water_temp, df_clean[-c(110597,110587,110585),])
+summary(model2)
+par(mfrow=c(2,2))
+plot(model2, col="#F4A582")
+```
+
+**1. Linearity assumption**
+
+Plot: Residuals vs Fitted (top left)
+
+This plot looks like we have randomly scrambled residuals around zero line, not like curvature or clustering. This implies that the linearity approximation is a realistic one.
+
+**2. Equal variance assumption**
+
+Plot: Scale-Location (bottom left)
+
+The spread of points over the fitted values looks pretty consistent, although there is some bunching at one end, and the spread of points themselves is fairly flat.
+
+**3. Normality of residuals assumption**
+
+Plot: Q-Q plot (top right)
+
+The points mostly are linear but deviate at the ends (tailing). Which means, almost normally distributed residuals, there might be some outliers or non normality at the extremity. For large datasets, small deviations are often not something that’s critical.
+
+**4. Leverage and outliers**
+
+Plot: Residuals vs Leverage (bottom-right)
+
+The majority of the points seem to have no influence either at all or only minimally in bringing them far away from the majority, so the Cook’s distance lines are visible but there are no influential outliers or high-leverage points. This translates to no specific data point is affecting this model.
+
+### Inference for Simple Linear Regression
+
+```{r Inference on Beta_1 and Beta_0}
+# Get confidence intervals for beta_0 (intercept) and beta_1 (slope)
+ci <- confint(model)
+
+# Round the confidence intervals to 4 decimal places
+ci_rounded <- round(ci, 4)
+
+# Display the rounded confidence intervals
+ci_rounded
+```
+
+A 95% confidence interval for $\beta_1$ is found to be (0.0079, 0.0084).
+
+This means that we are 95% confident that by increasing the water temperature one Celcius degree, the true mean of pH levels would increase somewhere between 0.0079 and 0.0084.
+
+A 95% confidence interval for $\beta_0$ is found to be (8.2125 , 8.2175).
+
+This means that when the water temperature is 0°C, the true value of pH level is expected to be somewhere between 8.2125 and 8.2175.
+
+In both cases, we can see that the confidence intervals are both above 0, so $\beta_0$ and $\beta_1$ are larger than 0.
+
+## Prediction of a Single Response for the maximum  and minimum value of the water temperature
+
+```{r Estimation of the Single Response for a Specified x Value}
+# Extract coefficients
+beta_0 <- coef(model)[1]  # Intercept
+beta_1 <- coef(model)[2]  # Slope
+
+# Extract residual standard error (s) and number of observations (n)
+s <- summary(model)$sigma
+n <- nrow(df_clean)
+
+# Calculate mean of Temperature (x_bar)
+x_bar <- mean(df_clean$water_temp)
+
+# Calculate S_xx (sum of squared deviations of Temperature from its mean)
+S_xx <- sum((df_clean$water_temp - x_bar)^2)
+
+# Critical t-value for 95% confidence level with n-2 degrees of freedom
+t_value <- qt(0.975, df = n - 2)
+
+# Predict at max and min Temperature values
+x_p_max <- max(df_clean$water_temp)
+x_p_min <- min(df_clean$water_temp)
+
+# Function to calculate the confidence interval for mean response at x_p
+confidence_interval_mean <- function(x_p) {
+  # Predicted mean response at x_p
+  predicted_mean <- beta_0 + beta_1 * x_p
+  
+  # Confidence interval components
+  margin_of_error <- t_value * s * sqrt(1+1/n + (x_p - x_bar)^2 / S_xx)
+  
+  # Lower and upper bounds of the confidence interval
+  lower_bound <- predicted_mean - margin_of_error
+  upper_bound <- predicted_mean + margin_of_error
+  
+  return(c(predicted_mean, lower_bound, upper_bound))
+}
+
+# Calculate the confidence intervals for max and min temperatures
+ci_max <- confidence_interval_mean(x_p_max)
+ci_min <- confidence_interval_mean(x_p_min)
+
+# Display the results
+cat("At maximum temperature:", x_p_max, "\n")
+cat("Predicted pH:", ci_max[1], "\n")
+cat("95% Prediction Interval for mean pH: [", ci_max[2], ", ", ci_max[3], "]\n\n")
+
+cat("At minimum temperature:", x_p_min, "\n")
+cat("Predicted pH:", ci_min[1], "\n")
+cat("95% Prediction Interval for mean pH: [", ci_min[2], ", ", ci_min[3], "]\n")
+```
+
+**At maximum temperature ($26.098^\circ C$)**
+
+- Predicted pH: The predicted maximum temperature pH level is 8.4279.
+
+The mean pH at this temperature is in the 95% prediction interval (7.921361, 8.934528).
+
+With 95% confidence, we conclude that the true mean pH level under $26.098^\circ C$ must be in the interval (7.921361 , 8.934528).
+
+This is very small, so we are probably pretty close to having a precise prediction of the true mean pH at this temperature, and we can be very sure that the true mean pH is really close to 8.4279.
+
+**At minimum temperature ($-0.207^\circ C$)**
+
+- Predicted Mean pH: The predicted minimum temperature is 8.2133, the pH level is.
+
+The true mean pH level at $-0.207^\circ C$ is in the 95% prediction interval (7.706738, 8.719879 ).
+
+The prediction interval is very narrow again suggesting significant precision in this estimate. We expect the true mean pH to be very close to 8.2133.
+
+The analysis reveals a trend of increasing pH with temperature, and a trend of decreasing pH with a rise in temperature. Confidence intervals for the predicted mean pH values at both the maximum and minimum temperatures are very precise supporting the reliability of these predictions. This implies that temperature is a good predictors for pH levels in the data set.
+
+
+# Conclusion
+
+According to the City of Calgary, healthy water should have a pH between 7 and 10.5. Since the confidence interval from 8.2843 to 8.2871 is well within this range, it shows that Calgary's water is in a healthy state.
+
+Temperature changes alone are unlikely to bring the pH levels of Calgary’s water bodies outside of the recommended range for drinking water. Even at extreme temperature values in the dataset, the predicted pH values remain within the recommended safe drinking water standard of 6.0 to 8.5.
+
+Although the temperature and pH relationship is statistically significant, temperature does not control pH variations in the dataset. The low R-squared value suggests that other influencing factors to consider in future investigations for factors that explain pH levels within Calgary’s water bodies are other variables. This implies that other variables could play a more important part in the establishment of pH ranges apart from temperature.
+
+
